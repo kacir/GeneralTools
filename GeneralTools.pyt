@@ -22,7 +22,7 @@ class Toolbox(object):
 		self.alias = "General Tools"
 		
 		# List of tool classes associated with this toolbox
-		self.tools = [transcribeGeometry , documentGeodatabase, genGoogleMapsField, joinlessJoin, directoryStructureToCSV, genWebLinkField, EmbedOneToManyOverlapField, updateAcres, checkIfFilesExist]
+		self.tools = [transcribeGeometry , documentGeodatabase, genGoogleMapsField, joinlessJoin, directoryStructureToCSV, genWebLinkField, EmbedOneToManyOverlapField, updateAcres, checkIfFilesExist, genGPScoordsField]
 
 class directoryStructureToCSV(object):
 	"""generates a csv that contains all of the folders contained inside of a directory structure"""
@@ -780,4 +780,74 @@ class checkIfFilesExist(object):
 				
 				#update the underlaying information
 				upcur.updateRow(row)
+			
+			
+class genGPScoordsField(object):
+	def __init__(self):
+		"""Define the tool (tool name is the name of the class)."""
+		self.label = "Generate GPS Coordinates Field"
+		self.description = "Build field that represents the current location of the feature's centroid as a gps coordinate in degrees decimal minutes"
+		self.canRunInBackground = False
+		
+	def getParameterInfo(self):
+		"""defines the tools parameters"""
+		#input feature class
+		inputFeatureLayer = arcpy.Parameter(name="inputFeatureLayer" ,
+			displayName="Input Feature Layer",
+			direction="Input",
+			datatype="GPFeatureLayer",
+			parameterType="Required")
+			
+		#GPS Coordinate field
+		#Field that will be used to place the gps coordinate string into
+		gpsCordField = arcpy.Parameter(name="gpsCordField" ,
+			displayName="GPS Coordinates Field",
+			direction="Input",
+			datatype="Field",
+			parameterType="Required")
+			
+		gpsCordField.parameterDependencies = [inputFeatureLayer.name]
+		
+		return [inputFeatureLayer, gpsCordField]
+			
+		
+	def execute(self, parameters, messages):
+		"""The source code of the tool."""
+		
+		#set the input parameters
+		inputFeatureLayer = str(parameters[0].valueAsText)
+		gpsCordField = str(parameters[1].valueAsText)
+		degree_sign = u'\N{DEGREE SIGN}'#unicode literal for degree sign
+		
+		
+		messages.AddMessage("starting to calculate lat long conversion to GPS coordiantes")
+		#open curosr so it can perform updates on the field
+		upCur = arcpy.da.UpdateCursor(inputFeatureLayer , ["SHAPE@" , gpsCordField])
+		
+		wgscs = arcpy.SpatialReference(4326)#generate a spatial refernce object for wgs84 coordinate system using the registration number
+		
+		for row in upCur:#loop through all of the features in the input table
+			latLogShape = row[0].projectAs(wgscs).trueCentroid#project shape into WGS84
+			
+			#get the shapes new x, y coords
+			decimalDegreesX = round(latLogShape.X, 7)#rounding number
+			decimalDegreesY = round(latLogShape.Y, 7)#rounding number
+			
+			#seperate out the decimal portion from the decimal degrees
+			degreesX = int(decimalDegreesX)
+			degreesY = int(decimalDegreesY)
+			
+			#convert to units to create a decimal minute
+			decimalMinutesX = (decimalDegreesX - degreesX) * 60
+			decimalMinutesY = (decimalDegreesY - degreesY) * 60
+			
+			
+			#construct the google string
+			xString = unicode(degreesX) + u"\N{DEGREE SIGN} " + unicode(decimalMinutesX) + u"' E"
+			yString = unicode(degreesY) + u"\N{DEGREE SIGN} " + unicode(decimalMinutesY) + u"' N"
+			
+
+			#committ and apply the changes to the google field
+			row[1] = yString + u", " + xString
+			upCur.updateRow(row)#required for the changes to perminatly take in the row
 			
